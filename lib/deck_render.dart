@@ -5,8 +5,13 @@
 import 'package:deckscrollviewsafety/render_delegate/bottom_render.dart';
 import 'package:deckscrollviewsafety/render_delegate/top_render.dart';
 import 'package:deckscrollviewsafety/render_delegate/whole_render.dart';
+import 'package:flutter/animation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:vector_math/vector_math_64.dart' show Matrix4;
+
+typedef _ChildSizingFunction = double Function(RenderBox child);
 
 enum DeckViewMode { deckWhole, deckTop, deckBottom }
 
@@ -37,10 +42,10 @@ abstract class DeckChildManager {
   /// nothing.
   ///
   /// It is possible to create children with negative indices.
-  void createChild(int index, {required RenderBox? after});
+  void createChild(int index, {RenderBox? after});
 
   /// Removes the child element corresponding with the given RenderBox.
-  void removeChild(RenderBox? child);
+  void removeChild(RenderBox child);
 }
 
 /// [ParentData] for use with [RenderDeckViewport].
@@ -132,7 +137,7 @@ class RenderDeckViewport extends RenderBox
     required ViewportOffset offset,
     required double itemExtent,
     double layoutPow = 4,
-    required DeckViewMode? deckViewMode,
+    DeckViewMode? deckViewMode,
     bool? clipToSize = true,
     bool? renderChildrenOutsideViewport = false,
     List<RenderBox>? children,
@@ -175,6 +180,7 @@ class RenderDeckViewport extends RenderBox
   ViewportOffset _offset;
 
   set offset(ViewportOffset value) {
+    assert(value != null);
     if (value == _offset) return;
     if (attached) _offset.removeListener(_hasScrolled);
     _offset = value;
@@ -186,6 +192,7 @@ class RenderDeckViewport extends RenderBox
   double _layoutPow;
 
   set layoutPow(double value) {
+    assert(value != null);
     assert(value > 0);
     if (value == _layoutPow) return;
     _layoutPow = value;
@@ -202,6 +209,7 @@ class RenderDeckViewport extends RenderBox
   double _itemExtent;
 
   set itemExtent(double value) {
+    assert(value != null);
     assert(value > 0);
     if (value == _itemExtent) return;
     _itemExtent = value;
@@ -212,6 +220,7 @@ class RenderDeckViewport extends RenderBox
   DeckViewMode? _deckViewMode;
 
   set deckViewMode(DeckViewMode? value) {
+    assert(value != null);
     if (value == _deckViewMode) return;
     _deckViewMode = value;
     _delegate = null;
@@ -234,7 +243,7 @@ class RenderDeckViewport extends RenderBox
   /// If this is false and [renderChildrenOutsideViewport] is false, the
   /// first and last children may be painted partly outside of this scroll view.
   /// {@endtemplate}
-  bool? get clipToSize => _clipToSize!;
+  bool? get clipToSize => _clipToSize;
   bool? _clipToSize;
 
   set clipToSize(bool? value) {
@@ -282,10 +291,9 @@ class RenderDeckViewport extends RenderBox
   }
 
   @override
-  void setupParentData(RenderObject? child) {
-    if (child != null && child.parentData != null && child.parentData is! DeckParentData) {
+  void setupParentData(RenderObject child) {
+    if (child.parentData is! DeckParentData)
       child.parentData = DeckParentData();
-    }
   }
 
   @override
@@ -337,10 +345,11 @@ class RenderDeckViewport extends RenderBox
 
   /// Gets the index of a child by looking at its parentData.
   int indexOf(RenderBox? child) {
+    assert(child != null);
     final DeckParentData? childParentData =
         child?.parentData as DeckParentData?;
-    if (childParentData != null) return childParentData.index;
-    return 0;
+    assert(childParentData != null);
+    return childParentData!.index;
   }
 
   /// Transforms a **scrollable layout coordinates**' y position to the
@@ -378,14 +387,16 @@ class RenderDeckViewport extends RenderBox
   void _destroyChild(RenderBox? child) {
     invokeLayoutCallback<BoxConstraints>((BoxConstraints constraints) {
       assert(constraints == this.constraints);
-      childManager.removeChild(child);
+      childManager.removeChild(child!);
     });
   }
 
-  void _layoutChild(RenderBox child, BoxConstraints constraints, int index) {
-    child.layout(constraints, parentUsesSize: true);
-    final DeckParentData childParentData = child.parentData as DeckParentData;
-    _updateParentDataOffset(childParentData, index);
+  void _layoutChild(RenderBox? child, BoxConstraints constraints, int index) {
+    if (child != null) {
+      child.layout(constraints, parentUsesSize: true);
+      final DeckParentData childParentData = child.parentData as DeckParentData;
+      _updateParentDataOffset(childParentData, index);
+    }
   }
 
   void _updateParentDataOffset(DeckParentData childParentData, int index) {
@@ -416,7 +427,8 @@ class RenderDeckViewport extends RenderBox
     // If renderChildrenOutsideViewport is true, we spawn extra children by
     // doubling the visibility range, those that are in the backside of the
     // cylinder won't be painted anyway.
-    if (renderChildrenOutsideViewport != null && renderChildrenOutsideViewport!) {
+    if (renderChildrenOutsideViewport != null &&
+        renderChildrenOutsideViewport!) {
       visibleHeight *= 2;
     }
 
@@ -452,7 +464,7 @@ class RenderDeckViewport extends RenderBox
     // return.
     if (targetFirstIndex > targetLastIndex) {
       while (firstChild != null) {
-        _destroyChild(firstChild!);
+        _destroyChild(firstChild);
       }
       return;
     }
@@ -467,18 +479,18 @@ class RenderDeckViewport extends RenderBox
 
     // Case when there is no intersection.
     if (childCount > 0 &&
-        (indexOf(firstChild!) > targetLastIndex ||
+        (indexOf(firstChild) > targetLastIndex ||
             indexOf(lastChild) < realTargetFirstIndex)) {
       while (firstChild != null) {
-        _destroyChild(firstChild!);
+        _destroyChild(firstChild);
       }
     }
 
     // If there is no child at this stage, we add the first one that is in
     // target range.
-    if (childCount == 0 && firstChild != null) {
+    if (childCount == 0) {
       _createChild(targetFirstIndex);
-      _layoutChild(firstChild!, childConstraints, targetFirstIndex);
+      _layoutChild(firstChild, childConstraints, targetFirstIndex);
     }
 
     int currentFirstIndex = indexOf(firstChild);
@@ -488,11 +500,11 @@ class RenderDeckViewport extends RenderBox
     // both directions.
     // while (currentFirstIndex < targetFirstIndex) {
     while (currentFirstIndex < realTargetFirstIndex) {
-      _destroyChild(firstChild!);
+      _destroyChild(firstChild);
       currentFirstIndex++;
     }
     while (currentLastIndex > targetLastIndex) {
-      _destroyChild(lastChild!);
+      _destroyChild(lastChild);
       currentLastIndex--;
     }
 
@@ -506,13 +518,11 @@ class RenderDeckViewport extends RenderBox
     // Spawning new children that are actually visible but not in child list yet.
     while (currentFirstIndex > realTargetFirstIndex) {
       _createChild(currentFirstIndex - 1);
-      _layoutChild(firstChild!, childConstraints, --currentFirstIndex);
+      _layoutChild(firstChild, childConstraints, --currentFirstIndex);
     }
     while (currentLastIndex < targetLastIndex) {
       _createChild(currentLastIndex + 1, after: lastChild);
-      if (lastChild != null) {
-        _layoutChild(lastChild!, childConstraints, ++currentLastIndex);
-      }
+      _layoutChild(lastChild, childConstraints, ++currentLastIndex);
     }
 
     offset.applyViewportDimension(_viewportExtent);
@@ -543,7 +553,7 @@ class RenderDeckViewport extends RenderBox
   @override
   void paint(PaintingContext context, Offset offset) {
     if (childCount > 0) {
-      if (_clipToSize! && _shouldClipAtCurrentOffset()) {
+      if (_clipToSize != null && _clipToSize! && _shouldClipAtCurrentOffset()) {
         context.pushClipRect(
           needsCompositing,
           offset,
@@ -559,14 +569,19 @@ class RenderDeckViewport extends RenderBox
   /// Paints all children visible in the current viewport.
   void _paintVisibleChildren(PaintingContext context, Offset offset) {
     RenderBox? childToPaint = reversePaint ? lastChild : firstChild;
-    DeckParentData childParentData = childToPaint?.parentData as DeckParentData;
+    DeckParentData? childParentData =
+        childToPaint?.parentData as DeckParentData;
 
-    final matrix4 = _paintTransformedChild(
-        childToPaint, context, offset, childParentData.offset);
-    childParentData.paintTransform = matrix4;
-    childToPaint =
-        reversePaint ? childBefore(childToPaint!) : childAfter(childToPaint!);
-    childParentData = childToPaint?.parentData as DeckParentData;
+    while (childParentData != null) {
+      final matrix4 = _paintTransformedChild(
+          childToPaint, context, offset, childParentData.offset);
+      childParentData.paintTransform = matrix4;
+      if (childToPaint != null) {
+        childToPaint =
+            reversePaint ? childBefore(childToPaint) : childAfter(childToPaint);
+      }
+      childParentData = childToPaint?.parentData as DeckParentData?;
+    }
   }
 
   /// Takes in a child with a **scrollable layout offset** and paints it in the
@@ -625,8 +640,8 @@ class RenderDeckViewport extends RenderBox
   }
 
   @override
-  Rect? describeApproximatePaintClip(RenderObject child) {
-    if (_shouldClipAtCurrentOffset()) {
+  Rect? describeApproximatePaintClip(RenderObject? child) {
+    if (child != null && _shouldClipAtCurrentOffset()) {
       return Offset.zero & size;
     }
     return null;
@@ -689,14 +704,18 @@ class RenderDeckViewport extends RenderBox
     Duration duration = Duration.zero,
     Curve curve = Curves.ease,
   }) {
-    final RevealedOffset revealedOffset =
-        getOffsetToReveal(descendant!, 0.5, rect: rect);
-    if (duration == Duration.zero) {
-      offset.jumpTo(revealedOffset.offset);
-    } else {
-      offset.animateTo(revealedOffset.offset, duration: duration, curve: curve);
+    if (descendant != null) {
+      // Shows the descendant in the selected/center position.
+      final RevealedOffset revealedOffset =
+          getOffsetToReveal(descendant, 0.5, rect: rect);
+      if (duration == Duration.zero) {
+        offset.jumpTo(revealedOffset.offset);
+      } else {
+        offset.animateTo(revealedOffset.offset,
+            duration: duration, curve: curve);
+      }
+      rect = revealedOffset.rect;
     }
-    rect = revealedOffset.rect;
 
     super.showOnScreen(
       rect: rect,
@@ -707,9 +726,10 @@ class RenderDeckViewport extends RenderBox
 }
 
 abstract class DeckRenderDelegate {
-  DeckRenderDelegate(this.viewport);
+  DeckRenderDelegate(this.viewport) : assert(viewport != null);
 
   static DeckRenderDelegate fromViewport(RenderDeckViewport viewport) {
+    assert(viewport != null);
     switch (viewport.deckViewMode) {
       case DeckViewMode.deckTop:
         return RenderTopDelegate(viewport);

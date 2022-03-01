@@ -26,7 +26,7 @@ import 'package:flutter/widgets.dart';
 abstract class DeckChildDelegate {
   /// Return the child at the given index. If the child at the given
   /// index does not exist, return null.
-  Widget build(BuildContext context, int index);
+  Widget? build(BuildContext context, int index);
 
   /// Returns an estimate of the number of children this delegate will build.
   int? get estimatedChildCount;
@@ -67,7 +67,7 @@ abstract class DeckChildDelegate {
 /// conditions.
 class DeckChildListDelegate extends DeckChildDelegate {
   /// Constructs the delegate from a concrete list of children.
-  DeckChildListDelegate({required this.children});
+  DeckChildListDelegate({required this.children}) : assert(children != null);
 
   /// The list containing all children that can be supplied.
   final List<Widget> children;
@@ -109,7 +109,8 @@ class DeckChildListDelegate extends DeckChildDelegate {
 /// conditions.
 class DeckChildLoopingListDelegate extends DeckChildDelegate {
   /// Constructs the delegate from a concrete list of children.
-  DeckChildLoopingListDelegate({required this.children});
+  DeckChildLoopingListDelegate({required this.children})
+      : assert(children != null);
 
   /// The list containing all children that can be supplied.
   final List<Widget> children;
@@ -145,7 +146,7 @@ class DeckChildBuilderDelegate extends DeckChildDelegate {
   DeckChildBuilderDelegate({
     required this.builder,
     this.childCount,
-  });
+  }) : assert(builder != null);
 
   /// Called lazily to build children.
   final IndexedWidgetBuilder builder;
@@ -164,15 +165,15 @@ class DeckChildBuilderDelegate extends DeckChildDelegate {
   int? get estimatedChildCount => childCount;
 
   @override
-  Widget build(BuildContext context, int index) {
+  Widget? build(BuildContext context, int index) {
     if (childCount == null) {
-      final Widget child = builder(context, index);
-      IndexedSemantics(child: child, index: index);
+      final Widget? child = builder(context, index);
+      return child == null
+          ? null
+          : IndexedSemantics(child: child, index: index);
     }
-    if (index > 0 && index >= childCount!) {
-      return IndexedSemantics(child: builder(context, index), index: index);
-    }
-    return const SizedBox();
+    if (index < 0 || index >= childCount!) return null;
+    return IndexedSemantics(child: builder(context, index), index: index);
   }
 
   @override
@@ -242,12 +243,16 @@ class DeckScrollView extends StatefulWidget {
     this.clipToSize = true,
     this.renderChildrenOutsideViewport = false,
     required List<Widget> children,
-  })  : assert(layoutPow > 0),
+  })  : assert(children != null),
+        assert(layoutPow != null),
+        assert(layoutPow > 0),
+        assert(itemExtent != null),
         assert(itemExtent > 0),
+        assert(deckViewMode != null),
+        assert(clipToSize != null),
+        assert(renderChildrenOutsideViewport != null),
         assert(
-          (renderChildrenOutsideViewport != null &&
-                  !renderChildrenOutsideViewport) ||
-              (clipToSize != null && !clipToSize),
+          !renderChildrenOutsideViewport || !clipToSize,
           RenderDeckViewport.clipToSizeAndRenderChildrenOutsideViewportConflict,
         ),
         assert(
@@ -271,12 +276,16 @@ class DeckScrollView extends StatefulWidget {
     this.clipToSize = true,
     this.renderChildrenOutsideViewport = false,
     required this.childDelegate,
-  })  : assert(layoutPow > 0),
+  })  : assert(childDelegate != null),
+        assert(layoutPow != null),
+        assert(layoutPow > 0),
+        assert(itemExtent != null),
         assert(itemExtent > 0),
+        assert(deckViewMode != null),
+        assert(clipToSize != null),
+        assert(renderChildrenOutsideViewport != null),
         assert(
-          (renderChildrenOutsideViewport != null &&
-                  !renderChildrenOutsideViewport) ||
-              (clipToSize != null && !clipToSize),
+          !renderChildrenOutsideViewport || !clipToSize,
           RenderDeckViewport.clipToSizeAndRenderChildrenOutsideViewportConflict,
         ),
         assert(
@@ -317,10 +326,10 @@ class DeckScrollView extends StatefulWidget {
   final DeckViewMode deckViewMode;
 
   /// {@macro flutter.rendering.wheelList.clipToSize}
-  final bool? clipToSize;
+  final bool clipToSize;
 
   /// {@macro flutter.rendering.wheelList.renderChildrenOutsideViewport}
-  final bool? renderChildrenOutsideViewport;
+  final bool renderChildrenOutsideViewport;
 
   /// A delegate that helps lazily instantiating child.
   final DeckChildDelegate childDelegate;
@@ -341,9 +350,9 @@ class _DeckScrollViewState extends State<DeckScrollView> {
   void didUpdateWidget(DeckScrollView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.controller != null && widget.controller != scrollController) {
-      final ScrollController oldScrollController = scrollController!;
+      final ScrollController? oldScrollController = scrollController;
       SchedulerBinding.instance.addPostFrameCallback((_) {
-        oldScrollController.dispose();
+        if (oldScrollController != null) oldScrollController.dispose();
       });
       scrollController = widget.controller;
     }
@@ -393,7 +402,7 @@ class DeckElement extends RenderObjectElement implements DeckChildManager {
   // Any time we do case 1, though, we reset the cache.
 
   /// A cache of widgets so that we don't have to rebuild every time.
-  final Map<int, Widget> _childWidgets = HashMap<int, Widget>();
+  final Map<int, Widget?> _childWidgets = HashMap<int, Widget?>();
 
   /// The map containing all active child elements. SplayTreeMap is used so that
   /// we have all elements ordered and iterable by their keys.
@@ -423,15 +432,13 @@ class DeckElement extends RenderObjectElement implements DeckChildManager {
     final int? firstIndex = _childElements.firstKey();
     final int? lastIndex = _childElements.lastKey();
 
-    if (firstIndex != null && lastIndex != null) {
-      for (int index = firstIndex; index <= lastIndex; ++index) {
-        final Element? newChild =
-            updateChild(_childElements[index], retrieveWidget(index), index);
-        if (newChild != null) {
-          _childElements[index] = newChild;
-        } else {
-          _childElements.remove(index);
-        }
+    for (int index = firstIndex!; index <= lastIndex!; ++index) {
+      final Element? newChild =
+          updateChild(_childElements[index], retrieveWidget(index), index);
+      if (newChild != null) {
+        _childElements[index] = newChild;
+      } else {
+        _childElements.remove(index);
       }
     }
   }
@@ -441,9 +448,8 @@ class DeckElement extends RenderObjectElement implements DeckChildManager {
   /// Normally the builder is only called once for each index and the result
   /// will be cached. However when the element is rebuilt, the cache will be
   /// cleared.
-  Widget retrieveWidget(int index) {
-    return _childWidgets.putIfAbsent(
-        index, () => widget.childDelegate.build(this, index));
+  Widget? retrieveWidget(int index) {
+    return _childWidgets.putIfAbsent(index, () => widget.childDelegate.build(this, index));
   }
 
   @override
@@ -452,7 +458,7 @@ class DeckElement extends RenderObjectElement implements DeckChildManager {
   @override
   void createChild(int index, {RenderBox? after}) {
     owner?.buildScope(this, () {
-      final bool insertFirst = (after == null);
+      final bool insertFirst = after == null;
       assert(insertFirst || _childElements[index - 1] != null);
       final Element? newChild =
           updateChild(_childElements[index], retrieveWidget(index), index);
@@ -466,8 +472,8 @@ class DeckElement extends RenderObjectElement implements DeckChildManager {
 
   @override
   void removeChild(RenderBox? child) {
-    final int index = renderObject.indexOf(child!);
-    owner!.buildScope(this, () {
+    final int index = renderObject.indexOf(child);
+    owner?.buildScope(this, () {
       assert(_childElements.containsKey(index));
       final Element? result = updateChild(_childElements[index], null, index);
       assert(result == null);
@@ -490,18 +496,16 @@ class DeckElement extends RenderObjectElement implements DeckChildManager {
   }
 
   @override
-  void insertRenderObjectChild(RenderObject child, int? slot) {
+  void insertRenderObjectChild(RenderObject child, int slot) {
     final renderObject = this.renderObject;
     assert(renderObject.debugValidateChild(child));
-    if (slot != null && _childElements[slot - 1] != null) {
-      renderObject.insert(child as RenderBox,
-          after: _childElements[slot - 1]?.renderObject as RenderBox?);
-    }
+    renderObject.insert(child as RenderBox,
+        after: _childElements[slot - 1]?.renderObject as RenderBox?);
     assert(renderObject == this.renderObject);
   }
 
   @override
-  void moveChildRenderObject(RenderObject child, dynamic slot) {
+  void moveRenderObjectChild(RenderObject child, Object? oldSlot,Object? newSlot) {
     const String moveChildRenderObjectErrorMessage =
         'Currently we maintain the list in contiguous increasing order, so '
         'moving children around is not allowed.';
@@ -509,7 +513,7 @@ class DeckElement extends RenderObjectElement implements DeckChildManager {
   }
 
   @override
-  void removeChildRenderObject(RenderObject child) {
+  void removeRenderObjectChild(RenderObject child, Object? slot) {
     assert(child.parent == renderObject);
     renderObject.remove(child as RenderBox);
   }
@@ -560,12 +564,16 @@ class DeckViewport extends RenderObjectWidget {
     this.renderChildrenOutsideViewport = false,
     required this.offset,
     required this.childDelegate,
-  })  : assert(layoutPow > 0),
+  })  : assert(childDelegate != null),
+        assert(offset != null),
+        assert(layoutPow != null),
+        assert(layoutPow > 0),
+        assert(itemExtent != null),
         assert(itemExtent > 0),
+        assert(clipToSize != null),
+        assert(renderChildrenOutsideViewport != null),
         assert(
-          (renderChildrenOutsideViewport != null &&
-                  !renderChildrenOutsideViewport) ||
-              (clipToSize != null && !clipToSize),
+          !renderChildrenOutsideViewport || !clipToSize,
           RenderDeckViewport.clipToSizeAndRenderChildrenOutsideViewportConflict,
         ),
         super(key: key);
@@ -577,10 +585,10 @@ class DeckViewport extends RenderObjectWidget {
   final DeckViewMode? deckViewMode;
 
   /// {@macro flutter.rendering.wheelList.clipToSize}
-  final bool? clipToSize;
+  final bool clipToSize;
 
   /// {@macro flutter.rendering.wheelList.renderChildrenOutsideViewport}
-  final bool? renderChildrenOutsideViewport;
+  final bool renderChildrenOutsideViewport;
 
   /// [ViewportOffset] object describing the content that should be visible
   /// in the viewport.
